@@ -19,11 +19,14 @@ fi
 # The first parameter is the user name.
 USER_NAME=${1}
 # The rest of the parameters are for the account comments.
-COMMENTS=${2}
+#used shift to input argument array frwd (remove arg-0)
+shift
+#COMMENTS=${2}
+COMMENTS="${@}"
 # Generate a password.
 PASSWORD=$(date +%s%N|sha256sum|head -c 32)
 # Create the user with the password.
-adduser -c ${COMMENTS} -m ${USER_NAME}
+adduser -c "${COMMENTS}" -m ${USER_NAME}
 # Check to see if the useradd command succeeded.
 if [[ ${?} -ne 0 ]]
 then
