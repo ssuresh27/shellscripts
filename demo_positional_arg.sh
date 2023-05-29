@@ -16,6 +16,7 @@ echo "You have passed ${NO_OF_PARAMETERS} in command line"
 if [[ "${NO_OF_PARAMETERS}" -lt 1 ]]
 then
     echo "Usage : ${0} USER_NAME [USER_NAME]..."
+    exit 1
 fi
 
 #For loop to display random password for users
