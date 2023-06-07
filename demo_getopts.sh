@@ -25,7 +25,7 @@ while getopts vl:s OPTIONS #l: requires argument
 do
     case ${OPTIONS} in
     v) 
-        VERBOSE='true'
+        VERBOSE='true' 
         log 'Verbose mode ON.'
         ;;
     l)
@@ -39,6 +39,17 @@ do
         ;;
     esac
 done
+
+display_input() {
+    echo
+    echo "No of inputs ${#}"
+    echo "All the input arguments ${@}"
+    echo "Argument Zero ${0}"
+    echo "Argument One ${1}"
+    echo "Argument Two ${2}"
+    echo "Argument Three ${3}"
+    echo
+}
 
 if [[ "${VERBOSE}" = 'true' ]]
 then
@@ -54,9 +65,14 @@ then
     PASSWORD="${PASSWORD}${SPECIAL_CHAR_STRING}"
 fi
 
+display_input "${@}"
+shift "$(( OPTIND - 1 ))"
+display_input "${@}"
+
 echo 
 echo "Password is :"
 echo 
 echo "${PASSWORD}"
 
 log "Done"
+exit 1
