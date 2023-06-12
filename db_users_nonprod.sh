@@ -1,7 +1,15 @@
 #!/bin/bash
-#Script to check the users status, generate new password and create new read-only user
+##################################################################
+#Script Name	:   db_users_nonprod.sh
+#Description	:   Created for L1/L2 to automate Argus READ-ONLY User Creation and password reset
+#Args           :   None                                                                                       
+#Author       	:   Suresh Sundararajan
+#Email         	:   Suresh.sundararajan@gilead.com
+#Created        :   06-June-2023
+#Usage          :   db_users_nonprod.sh
+###################################################################
 
-#Check the user is executed as oracle OS user
+#Check the script is executed as oracle OS user
 
 USER_NAME='oracle'
 PASSWORD_LENGTH=21
@@ -29,36 +37,62 @@ then
 
 fi
 
-#Display usage of script
 
-choice()
+#Writes the message to STDOUT
+log()
+{
+    DATE=$(date +%F_%H%M%S)
+    local MESSAGE="${*}"
+
+    echo -e "${DATE} :-\t\t\t${MESSAGE}"
+}
+
+#Display usage of script
+initial_choice()
 {
     echo -e '\n\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++'
     echo -e 'The script is indented to use only in Non-PROD Environment by DBAs'
     echo -e '++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++'
     echo -e '\nChoose from the below options'
-    echo -e '\t1. Unlock User \t\t\t\t2. Reset user password'
-    echo -e '\t3. Check account status \t\t4. Create read-only user'
+    echo -e '\t1. Check account status \t\t2. Account Unlock'
+    echo -e '\t3. Reset user password \t\t\t4. Create read-only user'
     echo -e '\t5. Check user privilege \t\t6. List Non-default DB users account status'
-    echo -e '\t\t\t 7. Press 7 or Q for quit'
+    echo -e '\t7. Press 7 or Q for quit'
     echo ''
+}
+choice()
+{
+    # echo -e '\n\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++'
+    # echo -e 'The script is indented to use only in Non-PROD Environment by DBAs'
+    # echo -e '++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++'
+    # echo -e '\nChoose from the below options'
+    # echo -e '\t1. Check account status \t\t2. Account Unlock'
+    # echo -e '\t3. Reset user password \t\t\t4. Create read-only user'
+    # echo -e '\t5. Check user privilege \t\t6. List Non-default DB users account status'
+    # echo -e '\t7. Press 7 or Q for quit'
+    # echo ''
+    echo "${HOSTNAME}@${ORACLE_SID} >"
     read -p 'Enter your choice : ' CHOICE
+    echo ''
 
 }
 
 #Read schema name to perform the database operation
 read_schema_name()
 {
+
+    echo ''
     read -p "Enter the schema name :- " SCHEMA_NAME
+    echo ''
 }
 
-#Generate Random password
+#Generate Random password for give length
 random_password()
 {
     PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9#[](){}=-' | fold -w ${PASSWORD_LENGTH} | head -n 1)
 }
 
-#Unlock a database user
+#Execute the script as per given argument
 execute_sql()
 {
     local SCRIPT="${SQL}"
@@ -72,14 +106,37 @@ EOF
 )
 
 #Verify last step status
+#Replacing with return instead of exit
+# if [[ "${?}" -ne 0 ]] 
+# then
+#     # echo 'Error in running SQL' >&2
+#     log 'Error in running SQL' >&2
+#     # exit 1
+#     return 1
+# elif [[ $(echo "${DB_RESULT}"|grep ORA-|wc -l) -gt 0 ]]
+# then
+#     # echo "SQL completed with ORA- errror" >&2
+#     log "SQL completed with ORA- errror" >&2
+#     log "${DB_RESULT}" >&2
+#     # exit 1
+#     return 1
+# fi
+
+# #if success return 0
+# # return ${?}
+
+
+#Old with exit code
 if [[ "${?}" -ne 0 ]] 
 then
-    echo 'Error in running SQL' >&2
+    # echo 'Error in running SQL' >&2
+    log 'Error in running SQL' 
     exit 1
 elif [[ $(echo "${DB_RESULT}"|grep ORA-|wc -l) -gt 0 ]]
 then
-    echo "SQL completed with ORA- errror" >&2
-    echo "${DB_RESULT}" >&2
+    # echo "SQL completed with ORA- errror" >&2
+    log "SQL completed with ORA- errror" 
+    log "${DB_RESULT}" 
     exit 1
 fi
 
@@ -90,8 +147,15 @@ fi
 }
 
 
+#Listing all the non-default users in DB
 list_all_users()
 {
+    log ''
+    log ''
+    log '-------------'
+    log 'List All User'
+    log '-------------'
+    
     SQL="col username for a30
     col account_status for a20
     col profile for a30
@@ -122,22 +186,95 @@ list_all_users()
     
 }
 
+
+#Check if schema/user exists in DB
 check_user_exists()
 {
+    read_schema_name
     SQL="select username from dba_users where username='${SCHEMA_NAME}';"
     execute_sql
     if [[ -z ${DB_RESULT} ]]
     then 
-        echo "${SCHEMA_NAME} not exists in DB"
+        # echo "${SCHEMA_NAME} not exists in DB"
+        log ''
+        log "User ${SCHEMA_NAME} not exists in ${HOSTNAME}@${ORACLE_SID} DB "
         DB_RESULT=1
     else
-        echo "${SCHEMA_NAME} exists in DB"
+        # echo "${SCHEMA_NAME} exists in DB"
+        log ''
+        log "User/Schema  ${SCHEMA_NAME} exists in ${HOSTNAME}@${ORACLE_SID} DB"
         DB_RESULT=0
     fi
 }
 
 
+#Check user account status
 check_user_account_status()
+{
+    check_user_exists
+    if [[ "${DB_RESULT}" -eq 1 ]]
+    then
+        # exit 1
+        ACCOUNT_STATUS=''
+        return #replacing with return to skip breaking the script
+    fi
+    SQL="select username,'|',account_status,'|',lock_date,'|',last_login from dba_users where username='${SCHEMA_NAME}';"
+    execute_sql
+    # echo "${DB_RESULT}"
+    ACCOUNT_STATUS=$(echo "${DB_RESULT}"|awk -F '|' '{print $2}'|tr -d " ")
+    # echo "${ACCOUNT_STATUS}"
+    log ''
+    log "Account Name\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $1}')"
+    log "Account Status\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $2}'|tr -d " ")"
+    log "Lock Date\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $3}')"
+    log "Last login\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $4}')"
+
+    # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
+    # log ''
+    # log "${SCHEMA_NAME}"
+    # log ''
+    # log "Account is ${ACCOUNT_STATUS} state"
+    # log ''
+    # echo "${DB_RESULT}"
+    # MAX_LOOP=$(echo ${DB_RESULT}|awk '{ print NF}')
+    # # echo "${MAX_LOOP}"
+    # for i in $(seq ${MAX_LOOP})
+    # do
+    #     echo "${TEMP_SQL}" |cut -d ',' -f $i
+    #     echo "${DB_RESULT}" |cut -d '|' -f $i
+    # done
+    
+}
+
+#Unlock user account
+unlock_user()
+{
+    # check_user_exists
+    check_user_account_status
+    local STATUS=$(echo $ACCOUNT_STATUS|tr -d " ")
+    if [[ "${STATUS}" = 'OPEN' ]]
+    then
+        # echo "${SCHEMA_NAME} account is already open"
+        # echo "${DB_RESULT}"
+        log ''
+        log "${SCHEMA_NAME} account is already in  open state"
+        log ''
+        # log "${DB_RESULT}"
+        # exit 0
+        return #replacing with return to skip breaking the script
+    else
+        SQL="alter user ${SCHEMA_NAME} account unlock;"
+        execute_sql
+        # echo "${DB_RESULT}"
+        # check_user_account_status
+
+    fi
+
+}
+
+
+#Reseting user password
+reset_password()
 {
     check_user_exists
     if [[ "${DB_RESULT}" -eq 1 ]]
@@ -145,77 +282,86 @@ check_user_account_status()
         # exit 1
         return #replacing with return to skip breaking the script
     fi
-    SQL="select username,account_status,lock_date,last_login from dba_users where username='${SCHEMA_NAME}';"
+    random_password
+    # echo "${PASSWORD}"
+    SQL="alter user ${SCHEMA_NAME} identified by \"${PASSWORD}\";"
     execute_sql
-    ACCOUNT_STATUS=$(echo "${DB_RESULT}"|awk '{print $2}')
-    echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
-
+    # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
+    # log ''
+    # log "${SCHEMA_NAME}"
+    log ''
+    log 'Please share the below new password with user'
+    log ''
+    log "Schema ${SCHEMA_NAME} new password is ${PASSWORD}"
+    log ''
 }
 
 
-unlock_user()
+#List user privilges excluding ROLE Privs
+list_privs()
 {
-    # check_user_exists
     check_user_account_status
-    if [[ "${ACCOUNT_STATUS}" = 'OPEN' ]]
+    if [[ "${DB_RESULT}" -eq 1 ]]
     then
-        echo "${SCHEMA_NAME} account is already open"
-        echo "${DB_RESULT}"
-        # exit 0
+        # exit 1
         return #replacing with return to skip breaking the script
-    else
-        SQL="alter user ${SCHEMA_NAME} account unlock;"
-        execute_sql
-        # echo "${DB_RESULT}"
-        check_user_account_status
-
     fi
-
+    SQL="alter user ${SCHEMA_NAME} identified by \"${PASSWORD}\";"
+    execute_sql
+    # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
+    # log ''
+    # log "${SCHEMA_NAME}"
+    log ''
+    log 'Please share the below new password with user'
+    log ''
+    log "Schema ${SCHEMA_NAME} new password is ${PASSWORD}"
+    log ''
 }
 
-QUIT='n'
+
+#Main
+
+#Listing users
 list_all_users
+#Run the script until QUIT=y
+QUIT='n'
+
+#Ask for user's choice
+initial_choice
 while [[ "${QUIT}"  != 'y' ]]
 do
 choice
 # echo "${CHOICE}"
-# echo "${SSH_CLIENT}"
 case "${CHOICE}" in
     
     1)
-        echo -e '\nUlock user:'
-        read_schema_name
-        unlock_user
+        log 'Check user account status'
+        check_user_account_status
         ;;
     2)
-        echo 'Reset user password'
-        read_schema_name
-        echo "${SCHEMA_NAME}"
+        log "Unlock user"
+        unlock_user
         ;;
     3) 
-        echo -e '\nCheck user account status'
-        read_schema_name
-        check_user_account_status
-        # echo "${SCHEMA_NAME}"
+        log 'Reset user password'
+        reset_password
         ;;
     4) 
-        echo 'Create read-only user'
-        read_schema_name
-        echo "${SCHEMA_NAME}"
+        log 'Create read-only user'
         ;;
     5)
-        echo 'Check user privilege'
-        echo "${SCHEMA_NAME}"
+        log 'Check user privilege'
         ;;
     6)
         list_all_users
         ;;
-    7|q)
+    7|q|Q)
+        log 'Quiting the script'
         QUIT='y'
         ;;
     ?)
-        echo 'Invalid chooice' >&2
-        exit 1
+        echo 'Invalid chooice, please choose from the below list' >&2
+        # exit 1
         ;;
 
 esac
