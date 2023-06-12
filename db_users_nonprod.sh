@@ -57,7 +57,8 @@ initial_choice()
     echo -e '\t1. Check account status \t\t2. Account Unlock'
     echo -e '\t3. Reset user password \t\t\t4. Create read-only user'
     echo -e '\t5. Check user privilege \t\t6. List Non-default DB users account status'
-    echo -e '\t7. Press 7 or Q for quit'
+    echo -e '\t7. Generate SYSTEM password'
+    echo -e '\t8. Press 8 or Q for quit'
     echo ''
 }
 choice()
@@ -76,6 +77,8 @@ choice()
     echo ''
 
 }
+
+
 
 #Read schema name to perform the database operation
 read_schema_name()
@@ -218,7 +221,7 @@ check_user_account_status()
         ACCOUNT_STATUS=''
         return #replacing with return to skip breaking the script
     fi
-    SQL="select username,'|',account_status,'|',lock_date,'|',last_login from dba_users where username='${SCHEMA_NAME}';"
+    SQL="select username,'|',account_status,'|',lock_date,'|',last_login,'|',profile,'|',default_tablespace,'|',temporary_tablespace from dba_users where username='${SCHEMA_NAME}';"
     execute_sql
     # echo "${DB_RESULT}"
     ACCOUNT_STATUS=$(echo "${DB_RESULT}"|awk -F '|' '{print $2}'|tr -d " ")
@@ -228,6 +231,9 @@ check_user_account_status()
     log "Account Status\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $2}'|tr -d " ")"
     log "Lock Date\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $3}')"
     log "Last login\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $4}')"
+    log "Profile \t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $5}')"
+    log "Default Tablespace\t:\t$(echo $DB_RESULT|awk -F '|' '{print $6}')"
+    log "Temp Tablespace\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $7}')"
 
     # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
     # log ''
@@ -265,6 +271,9 @@ unlock_user()
     else
         SQL="alter user ${SCHEMA_NAME} account unlock;"
         execute_sql
+        log ''
+        log "${SCHEMA_NAME}  Account unlocked"
+        log ''
         # echo "${DB_RESULT}"
         # check_user_account_status
 
@@ -284,7 +293,7 @@ reset_password()
     fi
     random_password
     # echo "${PASSWORD}"
-    SQL="alter user ${SCHEMA_NAME} identified by \"${PASSWORD}\";"
+    SQL="alter user ${SCHEMA_NAME} identified by \"${PASSWORD}\" account unlock;"
     execute_sql
     # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
     # log ''
@@ -292,8 +301,10 @@ reset_password()
     log ''
     log 'Please share the below new password with user'
     log ''
-    log "Schema ${SCHEMA_NAME} new password is ${PASSWORD}"
-    log ''
+    log "${SCHEMA_NAME}/${PASSWORD}"
+    # log ''
+    # log "New password is ${PASSWORD}"
+    # log ''
 }
 
 
@@ -301,12 +312,61 @@ reset_password()
 list_privs()
 {
     check_user_account_status
-    if [[ "${DB_RESULT}" -eq 1 ]]
-    then
-        # exit 1
-        return #replacing with return to skip breaking the script
-    fi
-    SQL="alter user ${SCHEMA_NAME} identified by \"${PASSWORD}\";"
+    log ''
+    log 'List User Privileges'
+    SQL="col GRANTEE for a20
+    col owner for a15
+    col table_name for a50
+    col role for a30
+    col granted_role for a30
+    col username for a30
+    select ' ' from dual;
+    select '\t\t\t\t\t Role Granted :- ' from dual;
+    select '\t\t\t\t\t --------------- ' from dual;
+    select '\t\t\t\t',GRANTED_ROLE,ADMIN_OPTION from dba_role_privs where GRANTEE  in ('${SCHEMA_NAME}') order by 1;
+    select ' ' from dual;
+    select '\t\t\t\t\t SYS Privs granted to Users :- ' from dual;
+    select '\t\t\t\t\t -----------------------------' from dual;
+    select '\t\t\t\t',GRANTEE,PRIVILEGE,ADMIN_OPTION  from dba_sys_privs where GRANTEE in ('${SCHEMA_NAME}') and GRANTEE  not in ('SYS','SYSTEM','DBA') order by 1,2;
+    select ' ' from dual;
+    select '\t\t\t\t\t Tab Privs granted to User :- ' from dual;
+    select '\t\t\t\t\t ---------------------------- ' from dual;
+    select '\t\t\t\t',GRANTEE,OWNER,TABLE_NAME, PRIVILEGE ,GRANTABLE from dba_tab_privs where GRANTEE in ('${SCHEMA_NAME}') and GRANTEE  not in ('SYS','SYSTEM','DBA') and TABLE_NAME  not like 'BIN$%' order by 1,2,3;
+        select ' ' from dual;
+    select '\t\t\t\t\t Table space Quotas  :- ' from dual;
+    select '\t\t\t\t\t ---------------------- ' from dual;
+    select '\t\t\t\t',ts.* from dba_ts_quotas ts where username in ('${SCHEMA_NAME}');"
+
+    execute_sql
+    log ''
+    echo -e "${DB_RESULT}"
+    log ''
+
+    # echo -e "${DB_RESULT}" |awk '{print $1, $2}'
+    # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
+    # log ''
+    # log "${SCHEMA_NAME}"
+    # log ''
+    # log 'Roles Granted'
+    # log ''
+    # # log "Schema ${SCHEMA_NAME} new password is ${PASSWORD}"
+    # log "${DB_RESULT}"
+    # log ''
+}
+
+
+system_password()
+{
+    # check_user_exists
+    # if [[ "${DB_RESULT}" -eq 1 ]]
+    # then
+    #     # exit 1
+    #     return #replacing with return to skip breaking the script
+    # fi
+    log 'Creating new password for SYSTEM'
+    random_password
+    # echo "${PASSWORD}"
+    SQL="alter user SYSTEM identified by \"${PASSWORD}\" account unlock;"
     execute_sql
     # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
     # log ''
@@ -314,7 +374,7 @@ list_privs()
     log ''
     log 'Please share the below new password with user'
     log ''
-    log "Schema ${SCHEMA_NAME} new password is ${PASSWORD}"
+    log "SYSTEM/${PASSWORD}"
     log ''
 }
 
@@ -351,16 +411,22 @@ case "${CHOICE}" in
         ;;
     5)
         log 'Check user privilege'
+        list_privs
         ;;
     6)
         list_all_users
         ;;
-    7|q|Q)
+    7)
+        log 'Generate SYSTEM password'
+        system_password
+        ;;
+    8|q|Q)
         log 'Quiting the script'
         QUIT='y'
         ;;
     ?)
-        echo 'Invalid chooice, please choose from the below list' >&2
+        echo 'Invalid choice, please chose from the below list' >&2
+        initial_choice
         # exit 1
         ;;
 
