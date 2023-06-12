@@ -39,7 +39,8 @@ choice()
     echo -e '\nChoose from the below options'
     echo -e '\t1. Unlock User \t\t\t\t2. Reset user password'
     echo -e '\t3. Check account status \t\t4. Create read-only user'
-    echo -e '\t5. Check user privilege \t\t6. Press 6 or Q for quit'
+    echo -e '\t5. Check user privilege \t\t6. List Non-default DB users account status'
+    echo -e '\t\t\t 7. Press 7 or Q for quit'
     echo ''
     read -p 'Enter your choice : ' CHOICE
 
@@ -88,6 +89,38 @@ fi
 # echo
 }
 
+
+list_all_users()
+{
+    SQL="col username for a30
+    col account_status for a20
+    col profile for a30
+    col limit for a30
+    col DEFAULT_TABLESPACE for a25
+    col TEMPORARY_TABLESPACE for a25
+    col LAST_LOGIN for a40
+    alter session set nls_date_format='DD-MON-YYYY';
+    select '++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++' from dual;
+    select 'USERNAME                       | ACCOUNT_STATUS       |     PROFILE                    |CREATED_DATE |             |             | LAST_LOIN                    ' from dual;
+    select '++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++' from dual;
+    select username,'|',account_status,'|',profile,'|',created,'|',lock_date,'|',expiry_date,'|',last_login from dba_users where ORACLE_MAINTAINED='N' and username not in ('ADMIN','RDSADMIN','RDS_DATAGUARD') order by 1;
+    select '++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++' from dual;
+    "
+    # SQL="select username,'|',account_status,'|',profile,'|',created,'|',lock_date,'|',expiry_date,'|',last_login,'\n' from dba_users where ORACLE_MAINTAINED='N' and username not in ('ADMIN','RDSADMIN','RDS_DATAGUARD') order by 1;"
+    # local DB_RESULT=$(execute_sql)
+    execute_sql
+    echo -e "${DB_RESULT}"
+    # while read -r line <$(echo -e "${DB_RESULT}")
+    # do
+    #     echo "${line}"
+    # done
+    # |awk -F '|'  '{print $1"\t\t"$2}'
+    # for r in ${DB_RESULT}
+    # do
+    #     echo -e "${r}\t"
+    # done
+    
+}
 
 check_user_exists()
 {
@@ -141,6 +174,7 @@ unlock_user()
 }
 
 QUIT='n'
+list_all_users
 while [[ "${QUIT}"  != 'y' ]]
 do
 choice
@@ -173,7 +207,10 @@ case "${CHOICE}" in
         echo 'Check user privilege'
         echo "${SCHEMA_NAME}"
         ;;
-    6|q)
+    6)
+        list_all_users
+        ;;
+    7|q)
         QUIT='y'
         ;;
     ?)
