@@ -1,12 +1,13 @@
 #!/bin/bash
 ##################################################################
-#Script Name	:   db_users_nonprod.sh
+#Script Name	:   db_users_nonprod.sh 
 #Description	:   Created for L1/L2 to automate Argus READ-ONLY User Creation and password reset
 #Args           :   None                                                                                       
 #Author       	:   Suresh Sundararajan
 #Email         	:   Suresh.sundararajan@gilead.com
 #Created        :   06-June-2023
-#Usage          :   db_users_nonprod.sh
+#Usage          :   db_users_nonprod.sh [-l PASSWORD_ENGTH]
+#Usage          :   db_users_nonprod.sh -l 12]
 ###################################################################
 
 #Check the script is executed as oracle OS user
@@ -37,6 +38,15 @@ then
 
 fi
 
+
+while getopts "l:" arg; do
+  case $arg in
+    l)
+      echo "Changing default password length ${PASSWORD_LENGTH} to new length ${OPTARG}"
+      PASSWORD_LENGTH=${OPTARG}
+      ;;
+  esac
+done
 
 #Writes the message to STDOUT
 log()
