@@ -51,7 +51,7 @@ log()
     echo -e "${DATE} :-\t\t\t${MESSAGE}"
 }
 
-#Aduit
+#audit
 audit()
 {
     DATE=$(date +%F.%H:%M:%S)
@@ -341,7 +341,7 @@ unlock_user()
         log ''
         log "${SCHEMA_NAME}  Account unlocked"
         log ''
-        aduit "${SCHEMA_NAME}  Account unlocked"
+        audit "${SCHEMA_NAME}  Account unlocked"
         # echo "${DB_RESULT}"
         # check_user_account_status
 
