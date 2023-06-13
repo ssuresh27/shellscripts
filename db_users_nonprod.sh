@@ -11,7 +11,7 @@
 ###################################################################
 
 #Check the script is executed as oracle OS user
-
+EXCLUDE_LIST='ARGS8PRD,ARGI8PRD,ARGM8PRD,ARGS8VAL,ARGI8VAL,ARGM8VAL'
 USER_NAME='oracle'
 PASSWORD_LENGTH=21
 USER_DDL_SCRIPT="${HOME}/.create_user.sql"
@@ -29,7 +29,7 @@ fi
 
 if [ -z "${ORACLE_SID}" ]
 then
-    echo 'ORACLE_SID is not, use . oraenv and set the oracle datbase envrionment variables' >&2
+    echo 'ORACLE_SID is not, use . oraenv and set the oracle database environment variables' >&2
     exit 1
 
 fi
@@ -557,6 +557,15 @@ create_ro_user()
 
 
 #Main
+#Check if this script executed in VAL & PROD
+
+if [[ $(cat "${EXCLUDE_LIST}" |grep "${ORACLE_SID}"|wc -l) -gt 0 ]]
+then
+    echo 'The script is intended to execute only in Non-PROD DB, please check the DB environment'  >&2
+    exit 1
+
+fi
+
 #Check the files exists
 check_audit_ddl_script
 
@@ -597,7 +606,7 @@ case "${CHOICE}" in
         create_ro_user
         ;;
     5)
-        log 'Check user privilege'
+        log 'Check user privileges'
         list_privs
         ;;
     6)
@@ -612,7 +621,7 @@ case "${CHOICE}" in
         QUIT='y'
         ;;
     ?)
-        echo 'Invalid choice, please chose from the below list' >&2
+        echo 'Invalid choice, please choose from the below list' >&2
         initial_choice
         # exit 1
         ;;
