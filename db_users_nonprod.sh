@@ -6,14 +6,18 @@
 #Author       	:   Suresh Sundararajan
 #Email         	:   Suresh.sundararajan@gilead.com
 #Created        :   06-June-2023
-#Usage          :   db_users_nonprod.sh [-l PASSWORD_ENGTH]
-#Usage          :   db_users_nonprod.sh -l 12]
+#Usage          :   ./db_users_nonprod.sh [-ac] [-l PASSWORD_ENGTH] [-f USER_DDL.sql]
+#Usage          :   ./db_users_nonprod.sh -a -c -l 12 -f USER_DDL.sql]
 ###################################################################
 
 #Check the script is executed as oracle OS user
 
 USER_NAME='oracle'
 PASSWORD_LENGTH=21
+USER_DDL_SCRIPT="${HOME}/.create_user.sql"
+readonly DDL_DML_LIST='create|drop|insert|update|delete'
+readonly AUDIT_FILE="${HOME}/.${HOSTNAME}.${ORACLE_SID}.aud"
+AUDIT='true'
 
 if [[ "$(id -un)" != "${USER_NAME}" ]]
 then
@@ -39,23 +43,76 @@ then
 fi
 
 
-while getopts "l:" arg; do
-  case $arg in
-    l)
-      echo "Changing default password length ${PASSWORD_LENGTH} to new length ${OPTARG}"
-      PASSWORD_LENGTH=${OPTARG}
-      ;;
-  esac
-done
-
 #Writes the message to STDOUT
 log()
 {
-    DATE=$(date +%F_%H%M%S)
+    DATE=$(date +%F.%H:%M:%S)
     local MESSAGE="${*}"
-
     echo -e "${DATE} :-\t\t\t${MESSAGE}"
 }
+
+#Aduit
+audit()
+{
+    DATE=$(date +%F.%H:%M:%S)
+    local MESSAGE="${*}"
+    echo -e "${DATE} : ${MESSAGE}" >> ${AUDIT_FILE}
+}
+
+#Display the usage for options
+usage() 
+{
+    echo "Usage : ${0} [-ac][-l LENGTH ]:[-f FILENAME.sql ]" >&2
+    echo 'Argus Non-PROD Read-only User Automation.' >&2
+    echo '  -a                  Disable tracking of unlock,create,reset activity' >&2
+    echo '  -c                  Validate user DDL script for any DDL/DML GRANTS.' >&2
+    echo '  -l LENGTH           Specify the password length.' >&2
+    echo '  -f FILENAME.sql     Specify the user ddl script name' >&2
+    exit 1
+}
+
+
+#Read input option parameters
+while getopts "acl:f:" arg; do
+  case $arg in
+    a)
+        AUDIT='false'
+        ;;
+    c)
+        VALIDE_DDL='true'
+        ;;
+    l)
+        log ''
+        log ''  
+        log 'Changing default password length'
+        log "From ${PASSWORD_LENGTH} to new length ${OPTARG}"
+        PASSWORD_LENGTH=${OPTARG}
+        ;;
+    f)
+        if [[ -z $(dirname "${OPTARG}"|sed '/^.$/d') ]]
+        then
+            FILENAME="${PWD}/${OPTARG}"
+        else
+            FILENAME="${OPTARG}"
+        fi        
+        log ''
+        log ''  
+        log 'Changing user creation script'
+        log "From ${USER_DDL_SCRIPT} to location ${FILENAME}"
+        USER_DDL_SCRIPT=${FILENAME}
+      ;;
+    *)
+        log ''
+        log ''  
+        log "Invalid option"
+        usage
+        ;;
+  esac
+done
+
+# Remove options from Arguments
+shift "$(( OPTIND - 1 ))"
+
 
 #Display usage of script
 initial_choice()
@@ -88,14 +145,13 @@ choice()
 
 }
 
-
-
 #Read schema name to perform the database operation
 read_schema_name()
 {
 
     echo ''
-    read -p "Enter the schema name :- " SCHEMA_NAME
+    read -p "Enter the schema name :- " NAME
+    SCHEMA_NAME="${NAME^^}"
     echo ''
 }
 
@@ -228,6 +284,7 @@ check_user_account_status()
     if [[ "${DB_RESULT}" -eq 1 ]]
     then
         # exit 1
+        log 'User not exists, cannot be verified'
         ACCOUNT_STATUS=''
         return #replacing with return to skip breaking the script
     fi
@@ -284,6 +341,7 @@ unlock_user()
         log ''
         log "${SCHEMA_NAME}  Account unlocked"
         log ''
+        aduit "${SCHEMA_NAME}  Account unlocked"
         # echo "${DB_RESULT}"
         # check_user_account_status
 
@@ -311,12 +369,42 @@ reset_password()
     log ''
     log 'Please share the below new password with user'
     log ''
-    log "${SCHEMA_NAME}/${PASSWORD}"
+    log "Login\t\t\t:\t${SCHEMA_NAME}/${PASSWORD}"
+    log ''
+    log ''
+    log "Hostname\t\t:\t ${HOSTNAME}"
+    log "PORT\t\t\t:\t 1521"
+    log "SERVICE_NAME\t\t:\t ${ORACLE_SID}"
+    audit "${SCHEMA_NAME} Password reset"
     # log ''
     # log "New password is ${PASSWORD}"
     # log ''
 }
 
+#Reseting SYSTEM password
+system_password()
+{
+    # check_user_exists
+    # if [[ "${DB_RESULT}" -eq 1 ]]
+    # then
+    #     # exit 1
+    #     return #replacing with return to skip breaking the script
+    # fi
+    log 'Creating new password for SYSTEM'
+    random_password
+    # echo "${PASSWORD}"
+    SQL="alter user SYSTEM identified by \"${PASSWORD}\" account unlock;"
+    execute_sql
+    # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
+    # log ''
+    # log "${SCHEMA_NAME}"
+    log ''
+    log 'Please share the below new password with user'
+    log ''
+    log "SYSTEM/${PASSWORD}"
+    log ''
+    audit "SYSTEM Password reset"
+}
 
 #List user privilges excluding ROLE Privs
 list_privs()
@@ -365,38 +453,126 @@ list_privs()
 }
 
 
-system_password()
+#Check create script exits
+check_audit_ddl_script()
 {
-    # check_user_exists
-    # if [[ "${DB_RESULT}" -eq 1 ]]
-    # then
-    #     # exit 1
-    #     return #replacing with return to skip breaking the script
-    # fi
-    log 'Creating new password for SYSTEM'
+    if [[ ! -e "${AUDIT_FILE}" ]]
+    then
+        touch "${AUDIT_FILE}"
+        if [[ "${?}" -ne 0 ]]
+        then
+            log  "${AUDIT_FILE} Not exists and error in creating"
+            exit 1
+        fi
+
+    fi
+
+    if [[ "${AUDIT}" = 'true' ]]
+    then
+        log ''
+        log "Checking if audit file ${AUDIT_FILE} exits and writable"
+        if [[ ! -w "${AUDIT_FILE}" ]]
+        then
+            echo "Error in writing to ${AUDIT_FILE}" >&2
+            echo 'Please check  the file permission or restart with -a to skip audit'
+            exit 1
+        fi
+        log ''
+        log "Audit file ${AUDIT_FILE} exits and writable"
+    fi
+
+    log ''
+    log "Checking if script ${USER_DDL_SCRIPT} exits and readable"
+    if [[ ! -r "${USER_DDL_SCRIPT}" ]]
+    then
+        log ''
+        log "${USER_DDL_SCRIPT} not exists or not readable"
+        log 'Please check the permission of the file'
+        exit 1
+    fi
+    log ''
+    log "Script ${USER_DDL_SCRIPT} exits and readable"
+}
+
+#Validate DDL/DML Grants
+validate_script()
+{
+    log ''
+    log "Validating if script ${USER_DDL_SCRIPT} has DDL/DML GRANTS"
+    WRITE_GRANT=$(cat ${USER_DDL_SCRIPT}|grep -viE '^#|^--|CREATE USER|CREATE SESSION'|grep -Ei "${DDL_DML_LIST}"|wc -l)
+    # echo ${WRITE_GRANT}
+    if [[ "${WRITE_GRANT}"  -gt 0 ]]
+    then
+        log "The Script ${USER_DDL_SCRIPT} has DML/DDL permission, please check"
+        log 'Existing the script'
+        exit 1
+    fi
+    log ''
+    log "Script ${USER_DDL_SCRIPT} has only READ-ONLY GRANTS"
+    
+}
+
+#Create Read-only user with script
+create_ro_user()
+{
+    check_user_exists
+    local CREATE_USER="${USER_DDL_SCRIPT}"
+    if [[ "${DB_RESULT}" -eq 0 ]]
+    then
+        # exit 1
+        log 'User already exists, cannot be created'
+        return #replacing with return to skip breaking the script
+    fi
     random_password
-    # echo "${PASSWORD}"
-    SQL="alter user SYSTEM identified by \"${PASSWORD}\" account unlock;"
+    SQL=$(cat ${CREATE_USER}|grep -v '^#\|^--'|sed "s/USER_NAME/${SCHEMA_NAME}/g"|sed "s/PASSWD/${PASSWORD}/g")
+    log ''
+    log ''
+    echo -e "${SQL}"
+    log ''
     execute_sql
-    # echo "${SCHEMA_NAME} account is ${ACCOUNT_STATUS} state"
-    # log ''
-    # log "${SCHEMA_NAME}"
+    SQL="select username,'|',account_status,'|',lock_date,'|',last_login,'|',profile,'|',default_tablespace,'|',temporary_tablespace from dba_users where username='${SCHEMA_NAME}';"
+    execute_sql
+    # echo "${DB_RESULT}"
+    ACCOUNT_STATUS=$(echo "${DB_RESULT}"|awk -F '|' '{print $2}'|tr -d " ")
+    # echo "${ACCOUNT_STATUS}"
+    log ''
+    log "Account Name\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $1}')"
+    log "Account Status\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $2}'|tr -d " ")"
+    log "Lock Date\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $3}')"
+    log "Last login\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $4}')"
+    log "Profile \t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $5}')"
+    log "Default Tablespace\t:\t$(echo $DB_RESULT|awk -F '|' '{print $6}')"
+    log "Temp Tablespace\t\t:\t$(echo $DB_RESULT|awk -F '|' '{print $7}')"
     log ''
     log 'Please share the below new password with user'
     log ''
-    log "SYSTEM/${PASSWORD}"
+    log "Login\t\t\t:\t${SCHEMA_NAME}/${PASSWORD}"
     log ''
+    log ''
+    log "Hostname\t\t:\t ${HOSTNAME}"
+    log "PORT\t\t\t:\t 1521"
+    log "SERVICE_NAME\t\t:\t ${ORACLE_SID}"
+    audit "${SCHEMA_NAME} Created"
 }
 
 
 #Main
+#Check the files exists
+check_audit_ddl_script
+
+#Validate for WRITER DML/DDL Permission
+if [[ "${VALIDE_DDL}" = 'true' ]]
+then
+    validate_script
+fi
+
 
 #Listing users
 list_all_users
 #Run the script until QUIT=y
 QUIT='n'
 
-#Ask for user's choice
+#Ask for DBA choice
 initial_choice
 while [[ "${QUIT}"  != 'y' ]]
 do
@@ -409,7 +585,7 @@ case "${CHOICE}" in
         check_user_account_status
         ;;
     2)
-        log "Unlock user"
+        log 'Unlock user'
         unlock_user
         ;;
     3) 
@@ -418,6 +594,7 @@ case "${CHOICE}" in
         ;;
     4) 
         log 'Create read-only user'
+        create_ro_user
         ;;
     5)
         log 'Check user privilege'
