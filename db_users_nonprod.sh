@@ -559,7 +559,7 @@ create_ro_user()
 #Main
 #Check if this script executed in VAL & PROD
 
-if [[ $(cat "${EXCLUDE_LIST}" |grep "${ORACLE_SID}"|wc -l) -gt 0 ]]
+if [[ $(echo "${EXCLUDE_LIST}" |grep "${ORACLE_SID}"|wc -l) -gt 0 ]]
 then
     echo 'The script is intended to execute only in Non-PROD DB, please check the DB environment'  >&2
     exit 1
